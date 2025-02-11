@@ -1,0 +1,17 @@
+RA, 2025-02-11
+
+Experimental ¹H-NMR
+https://www.chemicalbook.com/SpectrumEN_556-82-1_1HNMR.htm
+https://www.chemicalbook.com/Spectrum/556-82-1_1HNMR.png
+
+Computed ¹H-NMR
+https://nmrshiftdb.nmr.uni-koeln.de/portal/media-type/html/user/anon/page/default.psml/js_pane/P-Predict
+Prediction is for Chloroform-D1 (CDCl3)
+5.60 H-1;C(=CC/CC,HHO/
+4.15 H-1;C(HCO/H=C,H/CC)
+3.06 H-1;O(C/HHC/
+1.72 H-1;C(HHC/=CC/\H|C,HHH)
+1.71 H-1;C(HHC/=CC/HC,HHH)
+
+Experimental ¹³C-NMR
+https://nmrshiftdb.nmr.uni-koeln.de/portal/js_pane/P-Results/nmrshiftdbaction/showDetailsFromHome/molNumber/10016657

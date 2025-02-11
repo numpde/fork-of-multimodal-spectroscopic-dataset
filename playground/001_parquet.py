@@ -4,13 +4,11 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 
-# file = Path('.').absolute() / "data/multimodal_spectroscopic_dataset/aligned_chunk_0.parquet"
-file = Path('.').absolute().parent / "data/multimodal_spectroscopic_dataset/aligned_chunk_0.parquet"
+[file] = Path('.').absolute().parent.glob("**/multimodal_spectroscopic_dataset/aligned_chunk_0.parquet")
+print(file)
 
 df = pd.read_parquet(str(file), engine="pyarrow")
-
 print(df.head())
-
 
 first = next(df.iterrows())[1]
 print(first)
