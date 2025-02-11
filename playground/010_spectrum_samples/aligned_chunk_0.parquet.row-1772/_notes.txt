@@ -15,3 +15,6 @@ Prediction is for Chloroform-D1 (CDCl3)
 
 Experimental ¹³C-NMR
 https://nmrshiftdb.nmr.uni-koeln.de/portal/js_pane/P-Results/nmrshiftdbaction/showDetailsFromHome/molNumber/10016657
+
+Spectral Database for Organic Compounds (no NMR)
+https://sdbs.db.aist.go.jp/CompoundView.aspx?sdbsno=10049
