@@ -1,0 +1,15 @@
+RA, 2025-02-11
+
+Name/s:
+N-ethylethane-1,2-diamine
+2-aminoethyl-ethyl-amine
+Ethylenediamine, N-ethyl-
+1,2-Ethanediamine, N-ethyl-
+2-Aminoethyl(ethyl)amine
+AI3-26672
+EINECS 203-795-4
+127000_ALDRICH
+2-Ethylaminoethylamine
+N-Ethylethylenediamine
+02990_FLUKA
+[https://cactus.nci.nih.gov/chemical/structure/CCNCCN/names]

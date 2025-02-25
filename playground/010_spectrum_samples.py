@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 
@@ -11,10 +12,12 @@ OUT_DIR = Path(__file__).with_suffix('')
 OUT_DIR.mkdir(exist_ok=True)
 print(f"{OUT_DIR = }")
 
-[file] = Path('.').absolute().parent.glob("**/multimodal_spectroscopic_dataset/aligned_chunk_0.parquet")
-print(file)
+[dataset_path] = (Path(os.environ['HOME']) / "Datasets").glob("**/multimodal_spectroscopic_dataset")
 
-df = pd.read_parquet(str(file), engine="pyarrow")
+[parquet_file] = dataset_path.glob("aligned_chunk_0.parquet")
+print(parquet_file)
+
+df = pd.read_parquet(str(parquet_file), engine="pyarrow")
 
 # First row:
 data: pd.Series
@@ -27,7 +30,7 @@ for (i, data) in df.iterrows():
 
     print(f"SMILES: {data['smiles']}")
 
-    row_dir = OUT_DIR / f"{file.name}.row-{i}"
+    row_dir = OUT_DIR / f"{parquet_file.name}.row-{i}"
     row_dir.mkdir(exist_ok=True)
 
     for c in ['h_nmr_spectra', 'h_nmr_peaks', 'c_nmr_spectra', 'c_nmr_peaks', 'smiles']:
