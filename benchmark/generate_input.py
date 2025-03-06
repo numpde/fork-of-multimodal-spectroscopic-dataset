@@ -23,7 +23,7 @@ def tokenize_formula(formula: str) -> list:
 
 def process_hnmr(multiplets: List[Dict[str, Union[str, float, int]]]) -> str:
 
-    multiplet_str = "1HNMR "
+    multiplet_str = "1HNMR | "
     for peak in multiplets:
         range_max = float(peak["rangeMax"]) 
         range_min = float(peak["rangeMin"]) 
@@ -191,8 +191,18 @@ def main(
     formula: bool = True,
     pred_spectra: bool = False,
     seed: int = 3245
-):  
-    
+):
+    print(f"Analytical data: {analytical_data}")
+    print(f"Output path: {out_path}")
+    print(f"H NMR: {h_nmr}")
+    print(f"C NMR: {c_nmr}")
+    print(f"IR: {ir}")
+    print(f"Positive MSMS: {pos_msms}")
+    print(f"Negative MSMS: {neg_msms}")
+    print(f"Formula: {formula}")
+    print(f"Predict spectra: {pred_spectra}")
+    print(f"Seed: {seed}")
+
     # Make the training data
     tokenised_data = list()
     for parquet_file in analytical_data.glob("*.parquet"):

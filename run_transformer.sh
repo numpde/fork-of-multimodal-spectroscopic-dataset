@@ -3,11 +3,13 @@
 export LD_LIBRARY_PATH=/opt/share/gcc-10.1.0//lib64:/opt/share/gcc-10.1.0//lib:/usr/local/cuda-12.2/lib64
 
 run_dir=./runs
+data=$HOME/Datasets/2024-Alberts/b_extracted/multimodal_spectroscopic_dataset/
 
 # H NMR
 python ./benchmark/generate_input.py \
-        --analytical_data ./data/ \
+        --analytical_data ${data} \
         --out_path ${run_dir}/runs_f_groups/h_nmr \
+        --formula \
         --h_nmr 
 
 python ./benchmark/start_training.py \
@@ -15,7 +17,7 @@ python ./benchmark/start_training.py \
         --template_path ./benchmark/transformer_template.yaml
 # C NMR
 python ./benchmark/generate_input.py \
-        --analytical_data  ./data/ \
+        --analytical_data  ${data} \
         --out_path ${run_dir}/runs_f_groups/c_nmr \
         --c_nmr
 
@@ -25,7 +27,7 @@ python ./benchmark/start_training.py\
 
 # IR
 python ./benchmark/generate_input.py \
-        --analytical_data  ./data/ \
+        --analytical_data  ${data} \
         --out_path {$run_dir}/runs_f_groups/ir \
         --ir
 
@@ -35,7 +37,7 @@ python ./benchmark/start_training.py\
 
 # Pos MSMS
 python ./benchmark/generate_input.py \
-        --analytical_data  ./data/ \
+        --analytical_data  ${data} \
         --out_path ${run_dir}/runs_f_groups/pos_msms \
         --pos_msms
 
@@ -46,7 +48,7 @@ python ./benchmark/start_training.py\
 # Neg MSMS
 
 python ./benchmark/generate_input.py \
-        --analytical_data  ./data/ \
+        --analytical_data  ${data} \
         --out_path ${run_dir}/runs_f_groups/neg_msms \
         --neg_msms
 python ./benchmark/start_training.py\
@@ -55,7 +57,7 @@ python ./benchmark/start_training.py\
 
 # 1H + 13C
 python ./benchmark/generate_input.py \
-        --analytical_data  ./data/ \
+        --analytical_data  ${data} \
         --out_path ${run_dir}/runs_f_groups/all_modalities \
         --h_nmr \
         --c_nmr \
