@@ -35,7 +35,7 @@ def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFram
     return (train, test, val)
 
 
-def add_explicit_hs(smiles: str) -> str:
+def add_explicit_h(smiles: str) -> str:
     """
     Add explicit hydrogens to a SMILES string.
 
@@ -201,7 +201,7 @@ def tokenise_data(
 
         smiles = row["smiles"]
         if explicit_h:
-            smiles = add_explicit_hs(smiles)
+            smiles = add_explicit_h(smiles)
         tokenized_target = tokenize_smiles(smiles=smiles)
         input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target})
 
