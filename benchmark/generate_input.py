@@ -295,6 +295,7 @@ def main(
         tokenised_data_list.append(
             tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h)
         )
+        # break  # DEBUG
     tokenised_data = pd.concat(tokenised_data_list)
 
     (train_set, test_set, val_set) = split_data(tokenised_data, seed)
