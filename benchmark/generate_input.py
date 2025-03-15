@@ -5,17 +5,25 @@ Script to process analytical data and generate tokenized datasets for SMILES and
 
 from pathlib import Path
 from typing import Tuple, List, Dict, Union
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor
 
+import os
 import click
 import numpy as np
 import pandas as pd
 import regex as re
+
 from rdkit import Chem
 from scipy.interpolate import interp1d
 from sklearn.model_selection import train_test_split
 from tqdm.auto import tqdm
 
 from rxn.chemutils.tokenization import tokenize_smiles
+
+
+def set_nice():
+    os.nice(10)  # Increase niceness by 10 (lower priority)
 
 
 def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -29,10 +37,9 @@ def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFram
     Returns:
         A tuple containing the train, test, and validation DataFrames.
     """
-    (train, test) = train_test_split(data, test_size=0.1, random_state=seed, shuffle=True)
-    (train, val) = train_test_split(train, test_size=0.05, random_state=seed, shuffle=True)
-
-    return (train, test, val)
+    train, test = train_test_split(data, test_size=0.1, random_state=seed, shuffle=True)
+    train, val = train_test_split(train, test_size=0.05, random_state=seed, shuffle=True)
+    return train, test, val
 
 
 def add_explicit_h(smiles: str) -> str:
@@ -174,7 +181,9 @@ def tokenise_data(
         A DataFrame with tokenized 'source' and 'target' columns.
     """
     input_list = []
-    for _, row in tqdm(data.iterrows(), total=len(data)):
+
+    # for (_, row) in tqdm(data.iterrows(), total=len(data)):
+    for (_, row) in data.iterrows():
         tokenized_formula = tokenize_formula(row['molecular_formula'])
         tokenized_input = tokenized_formula if formula else ""
 
@@ -234,6 +243,22 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
             f.write(f"{item}\n")
 
 
+def process_parquet_file(parquet_file: Path, h_nmr: bool, c_nmr: bool, ir: bool,
+                         pos_msms: bool, neg_msms: bool, formula: bool, explicit_h: bool) -> pd.DataFrame:
+    """
+    Process a single parquet file and return its tokenized DataFrame.
+
+    Parameters:
+        parquet_file: Path to the parquet file.
+        h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h: Flags for tokenization options.
+
+    Returns:
+        A tokenized DataFrame.
+    """
+    data = pd.read_parquet(parquet_file)
+    return tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h)
+
+
 @click.command()
 @click.option(
     "--analytical_data",
@@ -289,16 +314,26 @@ def main(
     print(f"Predict spectra: {pred_spectra}")
     print(f"Seed: {seed}")
 
-    tokenised_data_list = []
-    for parquet_file in analytical_data.glob("*.parquet"):
-        data = pd.read_parquet(parquet_file)
-        tokenised_data_list.append(
-            tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h)
-        )
-        # break  # DEBUG
-    tokenised_data = pd.concat(tokenised_data_list)
+    parquet_files = sorted(list(analytical_data.glob("*.parquet")))
+    process_func = partial(
+        process_parquet_file,
+        h_nmr=h_nmr,
+        c_nmr=c_nmr,
+        ir=ir,
+        pos_msms=pos_msms,
+        neg_msms=neg_msms,
+        formula=formula,
+        explicit_h=explicit_h,
+    )
 
-    (train_set, test_set, val_set) = split_data(tokenised_data, seed)
+    with ProcessPoolExecutor(max_workers=7, initializer=set_nice) as executor:
+        tokenised_data_list = list(tqdm(
+            executor.map(process_func, parquet_files),
+            total=len(parquet_files),
+        ))
+
+    tokenised_data = pd.concat(tokenised_data_list)
+    train_set, test_set, val_set = split_data(tokenised_data, seed)
 
     out_data_path = out_path / "data"
     save_set(test_set, out_data_path, "test", pred_spectra)
