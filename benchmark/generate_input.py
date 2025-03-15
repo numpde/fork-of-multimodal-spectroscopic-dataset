@@ -51,15 +51,8 @@ def add_explicit_h(smiles: str) -> str:
 
     Returns:
         A SMILES string with explicit hydrogens.
-
-    Raises:
-        ValueError: If the SMILES string is invalid.
     """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError("Invalid SMILES string")
-    mol_with_h = Chem.AddHs(mol)
-    return Chem.MolToSmiles(mol_with_h)
+    return Chem.MolToSmiles(Chem.MolFromSmiles(smiles), allHsExplicit=True)
 
 
 def tokenize_formula(formula: str) -> str:
