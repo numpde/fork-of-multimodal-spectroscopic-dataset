@@ -254,7 +254,7 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
 @click.option("--ir", is_flag=True, default=False, help="Include IR spectra")
 @click.option("--pos_msms", is_flag=True, default=False, help="Include positive MS/MS data")
 @click.option("--neg_msms", is_flag=True, default=False, help="Include negative MS/MS data")
-@click.option("--formula", is_flag=True, default=True, help="Include molecular formula")
+@click.option("--formula", is_flag=True, default=False, help="Include molecular formula")
 @click.option("--explicit_h", is_flag=True, default=False, help="Use SMILES with explicit hydrogens")
 @click.option("--pred_spectra", is_flag=True, default=False, help="Predict spectra")
 @click.option("--seed", type=int, default=3245, help="Random seed")
