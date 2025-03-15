@@ -10,13 +10,21 @@ from sklearn.model_selection import train_test_split
 import regex as re
 from scipy.interpolate import interp1d
 import numpy as np
+from rdkit import Chem
+
+def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    (train, test) = train_test_split(data, test_size=0.1, random_state=seed, shuffle=True)
+    (train, val) = train_test_split(train, test_size=0.05, random_state=seed, shuffle=True)
+
+    return (train, test, val)
 
 
-def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame]:
-    train, test = train_test_split(data, test_size=0.1, random_state=seed, shuffle=True)
-    train, val = train_test_split(train, test_size=0.05, random_state=seed, shuffle=True)
-
-    return train, test, val
+def add_explicit_hs(smiles: str) -> str:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError("Invalid SMILES string")
+    mol_with_h = Chem.AddHs(mol)
+    return Chem.MolToSmiles(mol_with_h)
 
 def tokenize_formula(formula: str) -> list:
     return ' '.join(re.findall("[A-Z][a-z]?|\d+|.", formula)) + ' '
@@ -25,11 +33,11 @@ def process_hnmr(multiplets: List[Dict[str, Union[str, float, int]]]) -> str:
 
     multiplet_str = "1HNMR | "
     for peak in multiplets:
-        range_max = float(peak["rangeMax"]) 
-        range_min = float(peak["rangeMin"]) 
+        range_max = float(peak["rangeMax"])
+        range_min = float(peak["rangeMin"])
 
         formatted_peak = ""
-        formatted_peak = formatted_peak + "{:.2f} {:.2f} ".format(range_max, range_min)        
+        formatted_peak = formatted_peak + "{:.2f} {:.2f} ".format(range_max, range_min)
         formatted_peak = formatted_peak +  "{} {}H ".format(
                                                             peak["category"],
                                                             peak["nH"],
@@ -59,13 +67,13 @@ def process_ir(ir: np.ndarray, interpolation_points: int = 400) -> str:
     original_x = np.linspace(400, 4000, 1800)
     interpolation_x = np.linspace(400, 4000, interpolation_points)
 
-    
+
     interp = interp1d(original_x, ir)
     interp_ir = interp(interpolation_x)
 
     # Normalise
     interp_ir = interp_ir + abs(min(interp_ir))
-    interp_ir = (interp_ir / max(interp_ir)) * 100 
+    interp_ir = (interp_ir / max(interp_ir)) * 100
     interp_ir = np.round(interp_ir, decimals=0).astype(int).astype(str)
     return 'IR ' + ' '.join(interp_ir) + ' '
 
@@ -80,18 +88,19 @@ def process_msms(msms: List[List[float]]) -> List[str]:
 
 def tokenise_data(
     data: pd.DataFrame,
-    h_nmr: bool, 
+    h_nmr: bool,
     c_nmr: bool,
     ir: bool,
-    pos_msms: bool, 
+    pos_msms: bool,
     neg_msms: bool,
-    formula: bool
+    formula: bool,
+    explicit_h: bool,
 ):
     input_list = list()
 
     for i in tqdm(range(len(data))):
         tokenized_formula = tokenize_formula(data.iloc[i]['molecular_formula'])
-        
+
         if formula:
             tokenized_input = tokenized_formula
         else:
@@ -122,8 +131,13 @@ def tokenise_data(
             neg_msms_string += "E1Neg " + process_msms(data.iloc[i]["msms_negative_20ev"])
             neg_msms_string += "E2Neg " + process_msms(data.iloc[i]["msms_negative_40ev"])
             tokenized_input += neg_msms_string
-        
-        tokenized_target = tokenize_smiles(data.iloc[i]["smiles"])
+
+        smiles = data.iloc[i]["smiles"]
+
+        if explicit_h:
+            smiles = add_explicit_hs(smiles)
+
+        tokenized_target = tokenize_smiles(smiles=smiles)
         input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target})
 
     input_df = pd.DataFrame(input_list)
@@ -146,7 +160,7 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
 
         for item in src:
             f.write(f"{item}\n")
-        
+
     with (out_path / f"tgt-{set_type}.txt").open("w") as f:
         if pred_spectra:
             tgt = spectra
@@ -178,6 +192,7 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
 @click.option("--pos_msms", is_flag=True)
 @click.option("--neg_msms", is_flag=True)
 @click.option("--formula", is_flag=True)
+@click.option("--explicit_h", is_flag=True)
 @click.option("--pred_spectra", is_flag=True)
 @click.option("--seed", type=int, default=3245)
 def main(
@@ -189,6 +204,7 @@ def main(
     pos_msms: bool = False,
     neg_msms: bool = False,
     formula: bool = True,
+    explicit_h: bool = False,
     pred_spectra: bool = False,
     seed: int = 3245
 ):
@@ -200,6 +216,7 @@ def main(
     print(f"Positive MSMS: {pos_msms}")
     print(f"Negative MSMS: {neg_msms}")
     print(f"Formula: {formula}")
+    print(f"Explicit H: {explicit_h}")
     print(f"Predict spectra: {pred_spectra}")
     print(f"Seed: {seed}")
 
@@ -207,12 +224,12 @@ def main(
     tokenised_data = list()
     for parquet_file in analytical_data.glob("*.parquet"):
         data = pd.read_parquet(parquet_file)
-        tokenised_data.append(tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula))
+        tokenised_data.append(tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h))
         del data
 
     tokenised_data = pd.concat(tokenised_data)
 
-    train_set, test_set, val_set = split_data(tokenised_data, seed)
+    (train_set, test_set, val_set) = split_data(tokenised_data, seed)
 
     # Save training data
     out_data_path = out_path / "data"
