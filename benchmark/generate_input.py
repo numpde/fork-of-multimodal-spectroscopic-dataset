@@ -1,18 +1,34 @@
-from pathlib import Path
+#!/usr/bin/env python3
+"""
+Script to process analytical data and generate tokenized datasets for SMILES and spectra.
+"""
 
-import click
-import pandas as pd
-from tqdm.auto import tqdm
+from pathlib import Path
 from typing import Tuple, List, Dict, Union
 
-from rxn.chemutils.tokenization import tokenize_smiles
-from sklearn.model_selection import train_test_split
-import regex as re
-from scipy.interpolate import interp1d
+import click
 import numpy as np
+import pandas as pd
+import regex as re
 from rdkit import Chem
+from scipy.interpolate import interp1d
+from sklearn.model_selection import train_test_split
+from tqdm.auto import tqdm
+
+from rxn.chemutils.tokenization import tokenize_smiles
+
 
 def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Split the DataFrame into train, test, and validation sets.
+
+    Parameters:
+        data: Input DataFrame.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        A tuple containing the train, test, and validation DataFrames.
+    """
     (train, test) = train_test_split(data, test_size=0.1, random_state=seed, shuffle=True)
     (train, val) = train_test_split(train, test_size=0.05, random_state=seed, shuffle=True)
 
@@ -20,154 +36,201 @@ def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFram
 
 
 def add_explicit_hs(smiles: str) -> str:
+    """
+    Add explicit hydrogens to a SMILES string.
+
+    Parameters:
+        smiles: The SMILES string.
+
+    Returns:
+        A SMILES string with explicit hydrogens.
+
+    Raises:
+        ValueError: If the SMILES string is invalid.
+    """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError("Invalid SMILES string")
     mol_with_h = Chem.AddHs(mol)
     return Chem.MolToSmiles(mol_with_h)
 
-def tokenize_formula(formula: str) -> list:
-    return ' '.join(re.findall("[A-Z][a-z]?|\d+|.", formula)) + ' '
+
+def tokenize_formula(formula: str) -> str:
+    """
+    Tokenize a molecular formula into spaced tokens.
+
+    Parameters:
+        formula: Molecular formula string.
+
+    Returns:
+        A tokenized formula string.
+    """
+    return ' '.join(re.findall(r"[A-Z][a-z]?|\d+|.", formula)) + ' '
+
 
 def process_hnmr(multiplets: List[Dict[str, Union[str, float, int]]]) -> str:
+    """
+    Process 1H NMR multiplets into a tokenized string.
 
+    Parameters:
+        multiplets: List of dictionaries containing multiplet information.
+
+    Returns:
+        A tokenized 1H NMR string.
+    """
     multiplet_str = "1HNMR | "
     for peak in multiplets:
         range_max = float(peak["rangeMax"])
         range_min = float(peak["rangeMin"])
-
-        formatted_peak = ""
-        formatted_peak = formatted_peak + "{:.2f} {:.2f} ".format(range_max, range_min)
-        formatted_peak = formatted_peak +  "{} {}H ".format(
-                                                            peak["category"],
-                                                            peak["nH"],
-                                                        )
+        formatted_peak = "{:.2f} {:.2f} ".format(range_max, range_min)
+        formatted_peak += "{} {}H ".format(peak["category"], peak["nH"])
         js = str(peak["j_values"])
         if js != "None":
-            split_js = js.split("_")
-            split_js = list(filter(None, split_js))
+            split_js = list(filter(None, js.split("_")))
             processed_js = ["{:.2f}".format(float(j)) for j in split_js]
-            formatted_js = "J " + " ".join(processed_js)
-            formatted_peak += formatted_js
-
+            formatted_peak += "J " + " ".join(processed_js)
         multiplet_str += formatted_peak.strip() + " | "
+    return multiplet_str[:-2]
 
-    # Remove last separating token
-    multiplet_str = multiplet_str[:-2]
-    return multiplet_str
 
 def process_cnmr(carbon_nmr: List[Dict[str, Union[str, float, int]]]) -> str:
+    """
+    Process 13C NMR peaks into a tokenized string.
+
+    Parameters:
+        carbon_nmr: List of dictionaries containing 13C NMR data.
+
+    Returns:
+        A tokenized 13C NMR string.
+    """
     nmr_string = "13CNMR "
     for peak in carbon_nmr:
-        nmr_string += str(round(float(peak["delta (ppm)"]), 1)) + " "
-
+        nmr_string += f"{round(float(peak['delta (ppm)']), 1)} "
     return nmr_string
 
+
 def process_ir(ir: np.ndarray, interpolation_points: int = 400) -> str:
+    """
+    Interpolate and normalize IR spectra into a tokenized string.
+
+    Parameters:
+        ir: Array containing IR spectral intensities.
+        interpolation_points: Number of points to interpolate.
+
+    Returns:
+        A tokenized IR string.
+    """
     original_x = np.linspace(400, 4000, 1800)
     interpolation_x = np.linspace(400, 4000, interpolation_points)
-
-
     interp = interp1d(original_x, ir)
     interp_ir = interp(interpolation_x)
-
-    # Normalise
+    # Normalize
     interp_ir = interp_ir + abs(min(interp_ir))
     interp_ir = (interp_ir / max(interp_ir)) * 100
     interp_ir = np.round(interp_ir, decimals=0).astype(int).astype(str)
     return 'IR ' + ' '.join(interp_ir) + ' '
 
-def process_msms(msms: List[List[float]]) -> List[str]:
-    msms_string = ''
+
+def process_msms(msms: List[List[float]]) -> str:
+    """
+    Process MS/MS data into a tokenized string.
+
+    Parameters:
+        msms: List of [m/z, intensity] pairs.
+
+    Returns:
+        A tokenized MS/MS string.
+    """
+    msms_string = ""
     for peak in msms:
-        msms_string = msms_string + "{:.1f} {:.1f} ".format(
-            round(peak[0], 1), round(peak[1], 1)
-        )
+        msms_string += "{:.1f} {:.1f} ".format(round(peak[0], 1), round(peak[1], 1))
     return msms_string
 
 
 def tokenise_data(
-    data: pd.DataFrame,
-    h_nmr: bool,
-    c_nmr: bool,
-    ir: bool,
-    pos_msms: bool,
-    neg_msms: bool,
-    formula: bool,
-    explicit_h: bool,
-):
-    input_list = list()
+        data: pd.DataFrame,
+        h_nmr: bool,
+        c_nmr: bool,
+        ir: bool,
+        pos_msms: bool,
+        neg_msms: bool,
+        formula: bool,
+        explicit_h: bool,
+) -> pd.DataFrame:
+    """
+    Tokenize the data from the DataFrame into input/target pairs.
 
-    for i in tqdm(range(len(data))):
-        tokenized_formula = tokenize_formula(data.iloc[i]['molecular_formula'])
+    Parameters:
+        data: Input DataFrame containing analytical data.
+        h_nmr: Whether to include 1H NMR data.
+        c_nmr: Whether to include 13C NMR data.
+        ir: Whether to include IR spectra.
+        pos_msms: Whether to include positive MS/MS data.
+        neg_msms: Whether to include negative MS/MS data.
+        formula: Whether to include molecular formula.
+        explicit_h: Whether to convert SMILES to explicit hydrogen representation.
 
-        if formula:
-            tokenized_input = tokenized_formula
-        else:
-            tokenized_input = ''
+    Returns:
+        A DataFrame with tokenized 'source' and 'target' columns.
+    """
+    input_list = []
+    for _, row in tqdm(data.iterrows(), total=len(data)):
+        tokenized_formula = tokenize_formula(row['molecular_formula'])
+        tokenized_input = tokenized_formula if formula else ""
 
         if h_nmr:
-            h_nmr_string = process_hnmr(data.iloc[i]['h_nmr_peaks'])
-            tokenized_input += h_nmr_string
-
+            tokenized_input += process_hnmr(row['h_nmr_peaks'])
         if c_nmr:
-            c_nmr_string = process_cnmr(data.iloc[i]['c_nmr_peaks'])
-            tokenized_input += c_nmr_string
-
+            tokenized_input += process_cnmr(row['c_nmr_peaks'])
         if ir:
-            ir_string = process_ir(data.iloc[i]["ir_spectra"])
-            tokenized_input += ir_string
-
+            tokenized_input += process_ir(row["ir_spectra"])
         if pos_msms:
-            pos_msms_string = ''
-            pos_msms_string += "E0Pos " + process_msms(data.iloc[i]["msms_positive_10ev"])
-            pos_msms_string += "E1Pos " + process_msms(data.iloc[i]["msms_positive_20ev"])
-            pos_msms_string += "E2Pos " + process_msms(data.iloc[i]["msms_positive_40ev"])
+            pos_msms_string = (
+                    "E0Pos " + process_msms(row["msms_positive_10ev"]) +
+                    "E1Pos " + process_msms(row["msms_positive_20ev"]) +
+                    "E2Pos " + process_msms(row["msms_positive_40ev"])
+            )
             tokenized_input += pos_msms_string
-
         if neg_msms:
-            neg_msms_string = ''
-            neg_msms_string += "E0Neg " + process_msms(data.iloc[i]["msms_negative_10ev"])
-            neg_msms_string += "E1Neg " + process_msms(data.iloc[i]["msms_negative_20ev"])
-            neg_msms_string += "E2Neg " + process_msms(data.iloc[i]["msms_negative_40ev"])
+            neg_msms_string = (
+                    "E0Neg " + process_msms(row["msms_negative_10ev"]) +
+                    "E1Neg " + process_msms(row["msms_negative_20ev"]) +
+                    "E2Neg " + process_msms(row["msms_negative_40ev"])
+            )
             tokenized_input += neg_msms_string
 
-        smiles = data.iloc[i]["smiles"]
-
+        smiles = row["smiles"]
         if explicit_h:
             smiles = add_explicit_hs(smiles)
-
         tokenized_target = tokenize_smiles(smiles=smiles)
         input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target})
 
     input_df = pd.DataFrame(input_list)
-    input_df = input_df.drop_duplicates(subset="source")
-
-    return input_df
+    return input_df.drop_duplicates(subset="source")
 
 
 def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra: bool) -> None:
+    """
+    Save the tokenized dataset to text files.
+
+    Parameters:
+        data_set: DataFrame containing the dataset.
+        out_path: Output directory as a Path object.
+        set_type: A label for the dataset (e.g., 'train', 'test', 'val').
+        pred_spectra: Flag indicating whether to swap source and target.
+    """
     out_path.mkdir(parents=True, exist_ok=True)
+    smiles = data_set["target"].tolist()
+    spectra = data_set["source"].tolist()
+    src_items = smiles if pred_spectra else spectra
+    tgt_items = spectra if pred_spectra else smiles
 
-    smiles = list(data_set.target)
-    spectra = data_set.source
-
-    with (out_path / f"src-{set_type}.txt").open("w") as f:
-        if pred_spectra:
-            src = smiles
-        else:
-            src = spectra
-
-        for item in src:
+    with (out_path / f"src-{set_type}.txt").open("w", encoding="utf-8") as f:
+        for item in src_items:
             f.write(f"{item}\n")
 
-    with (out_path / f"tgt-{set_type}.txt").open("w") as f:
-        if pred_spectra:
-            tgt = spectra
-        else:
-            tgt = smiles
-
-        for item in tgt:
+    with (out_path / f"tgt-{set_type}.txt").open("w", encoding="utf-8") as f:
+        for item in tgt_items:
             f.write(f"{item}\n")
 
 
@@ -186,28 +249,34 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
     required=True,
     help="Output path",
 )
-@click.option("--h_nmr", is_flag=True)
-@click.option("--c_nmr", is_flag=True)
-@click.option("--ir", is_flag=True)
-@click.option("--pos_msms", is_flag=True)
-@click.option("--neg_msms", is_flag=True)
-@click.option("--formula", is_flag=True)
-@click.option("--explicit_h", is_flag=True)
-@click.option("--pred_spectra", is_flag=True)
-@click.option("--seed", type=int, default=3245)
+@click.option("--h_nmr", is_flag=True, default=False, help="Include 1H NMR data")
+@click.option("--c_nmr", is_flag=True, default=False, help="Include 13C NMR data")
+@click.option("--ir", is_flag=True, default=False, help="Include IR spectra")
+@click.option("--pos_msms", is_flag=True, default=False, help="Include positive MS/MS data")
+@click.option("--neg_msms", is_flag=True, default=False, help="Include negative MS/MS data")
+@click.option("--formula", is_flag=True, default=True, help="Include molecular formula")
+@click.option("--explicit_h", is_flag=True, default=False, help="Use SMILES with explicit hydrogens")
+@click.option("--pred_spectra", is_flag=True, default=False, help="Predict spectra")
+@click.option("--seed", type=int, default=3245, help="Random seed")
 def main(
-    analytical_data: Path,
-    out_path: Path,
-    h_nmr: bool = False,
-    c_nmr: bool = False,
-    ir: bool = False,
-    pos_msms: bool = False,
-    neg_msms: bool = False,
-    formula: bool = True,
-    explicit_h: bool = False,
-    pred_spectra: bool = False,
-    seed: int = 3245
-):
+        analytical_data: Path,
+        out_path: Path,
+        h_nmr: bool,
+        c_nmr: bool,
+        ir: bool,
+        pos_msms: bool,
+        neg_msms: bool,
+        formula: bool,
+        explicit_h: bool,
+        pred_spectra: bool,
+        seed: int,
+) -> None:
+    """
+    Process analytical data and generate tokenized dataset files.
+
+    Reads all parquet files from the analytical_data directory, tokenizes the information,
+    splits it into train, test, and validation sets, and saves them to out_path/data.
+    """
     print(f"Analytical data: {analytical_data}")
     print(f"Output path: {out_path}")
     print(f"H NMR: {h_nmr}")
@@ -220,22 +289,21 @@ def main(
     print(f"Predict spectra: {pred_spectra}")
     print(f"Seed: {seed}")
 
-    # Make the training data
-    tokenised_data = list()
+    tokenised_data_list = []
     for parquet_file in analytical_data.glob("*.parquet"):
         data = pd.read_parquet(parquet_file)
-        tokenised_data.append(tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h))
-        del data
-
-    tokenised_data = pd.concat(tokenised_data)
+        tokenised_data_list.append(
+            tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h)
+        )
+    tokenised_data = pd.concat(tokenised_data_list)
 
     (train_set, test_set, val_set) = split_data(tokenised_data, seed)
 
-    # Save training data
     out_data_path = out_path / "data"
     save_set(test_set, out_data_path, "test", pred_spectra)
     save_set(train_set, out_data_path, "train", pred_spectra)
     save_set(val_set, out_data_path, "val", pred_spectra)
+
 
 if __name__ == '__main__':
     main()
