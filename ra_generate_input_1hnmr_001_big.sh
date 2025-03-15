@@ -5,12 +5,9 @@ set -e
 
 CONDA="${HOME}/Programs/miniconda3/"
 
+#
 DATA="${HOME}/Datasets/2024-Alberts/b_extracted/multimodal_spectroscopic_dataset/"
-HNMR_SPLIT_DATASET_DIR="./runs/runs_f_groups/h_nmr"
-
-# Toy dataset (for testing)
-#DATA="./data/example_data"
-#HNMR_SPLIT_DATASET_DIR="./runs/example/h_nmr"
+HNMR_SPLIT_DATASET_DIR="./runs/001_big/h_nmr"
 
 source "${CONDA}/etc/profile.d/conda.sh"
 conda activate fork-of-multimodal-spectroscopic-dataset
