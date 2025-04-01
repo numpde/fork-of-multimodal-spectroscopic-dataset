@@ -246,7 +246,6 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
 
 
 def process_parquet_file(
-        *,
         parquet_file: Path,
         **params,
 ) -> pd.DataFrame:
