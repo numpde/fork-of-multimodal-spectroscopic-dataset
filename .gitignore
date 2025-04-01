@@ -1,3 +1,7 @@
+# Large data
+/data/multimodal_spectroscopic_dataset/
+/runs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -162,7 +166,3 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-
-# Large data
-/data/multimodal_spectroscopic_dataset/
-/runs/
