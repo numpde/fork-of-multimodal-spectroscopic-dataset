@@ -206,11 +206,13 @@ def tokenise_data(
 
         smiles = row["smiles"]
 
-        if explicit_h:
-            smiles = add_explicit_h(smiles)
+        # The order is important here:
 
         if mono:
             smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smiles), isomericSmiles=False)
+
+        if explicit_h:
+            smiles = add_explicit_h(smiles)
 
         tokenized_target = tokenize_smiles(smiles=smiles)
         input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target})
