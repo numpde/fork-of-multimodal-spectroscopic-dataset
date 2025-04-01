@@ -148,6 +148,7 @@ def process_msms(msms: List[List[float]]) -> str:
 
 
 def tokenise_data(
+        *,
         data: pd.DataFrame,
         h_nmr: bool,
         c_nmr: bool,
@@ -156,6 +157,7 @@ def tokenise_data(
         neg_msms: bool,
         formula: bool,
         explicit_h: bool,
+        mono: bool,
 ) -> pd.DataFrame:
     """
     Tokenize the data from the DataFrame into input/target pairs.
@@ -169,6 +171,7 @@ def tokenise_data(
         neg_msms: Whether to include negative MS/MS data.
         formula: Whether to include molecular formula.
         explicit_h: Whether to convert SMILES to explicit hydrogen representation.
+        mono: Whether to remove stereo information from SMILES.
 
     Returns:
         A DataFrame with tokenized 'source' and 'target' columns.
@@ -202,12 +205,18 @@ def tokenise_data(
             tokenized_input += neg_msms_string
 
         smiles = row["smiles"]
+
         if explicit_h:
             smiles = add_explicit_h(smiles)
+
+        if mono:
+            smiles = Chem.MolToSmiles(Chem.MolFromSmiles(smiles), isomericSmiles=False)
+
         tokenized_target = tokenize_smiles(smiles=smiles)
         input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target})
 
     input_df = pd.DataFrame(input_list)
+
     return input_df.drop_duplicates(subset="source")
 
 
@@ -236,8 +245,11 @@ def save_set(data_set: pd.DataFrame, out_path: Path, set_type: str, pred_spectra
             f.write(f"{item}\n")
 
 
-def process_parquet_file(parquet_file: Path, h_nmr: bool, c_nmr: bool, ir: bool,
-                         pos_msms: bool, neg_msms: bool, formula: bool, explicit_h: bool) -> pd.DataFrame:
+def process_parquet_file(
+        *,
+        parquet_file: Path,
+        **params,
+) -> pd.DataFrame:
     """
     Process a single parquet file and return its tokenized DataFrame.
 
@@ -249,7 +261,7 @@ def process_parquet_file(parquet_file: Path, h_nmr: bool, c_nmr: bool, ir: bool,
         A tokenized DataFrame.
     """
     data = pd.read_parquet(parquet_file)
-    return tokenise_data(data, h_nmr, c_nmr, ir, pos_msms, neg_msms, formula, explicit_h)
+    return tokenise_data(data=data, **params)
 
 
 @click.command()
@@ -274,6 +286,7 @@ def process_parquet_file(parquet_file: Path, h_nmr: bool, c_nmr: bool, ir: bool,
 @click.option("--neg_msms", is_flag=True, default=False, help="Include negative MS/MS data")
 @click.option("--formula", is_flag=True, default=False, help="Include molecular formula")
 @click.option("--explicit_h", is_flag=True, default=False, help="Use SMILES with explicit hydrogens")
+@click.option("--mono", is_flag=True, default=False, help="Remove stereo information from SMILES")
 @click.option("--pred_spectra", is_flag=True, default=False, help="Predict spectra")
 @click.option("--seed", type=int, default=3245, help="Random seed")
 def main(
@@ -286,6 +299,7 @@ def main(
         neg_msms: bool,
         formula: bool,
         explicit_h: bool,
+        mono: bool,
         pred_spectra: bool,
         seed: int,
 ) -> None:
@@ -304,6 +318,7 @@ def main(
     print(f"Negative MSMS: {neg_msms}")
     print(f"Formula: {formula}")
     print(f"Explicit H: {explicit_h}")
+    print(f"Mono (drop stereo): {mono}")
     print(f"Predict spectra: {pred_spectra}")
     print(f"Seed: {seed}")
 
@@ -317,6 +332,7 @@ def main(
         neg_msms=neg_msms,
         formula=formula,
         explicit_h=explicit_h,
+        mono=mono,
     )
 
     with ProcessPoolExecutor(max_workers=7, initializer=set_nice) as executor:
@@ -329,6 +345,7 @@ def main(
     train_set, test_set, val_set = split_data(tokenised_data, seed)
 
     out_data_path = out_path / "data"
+
     save_set(test_set, out_data_path, "test", pred_spectra)
     save_set(train_set, out_data_path, "train", pred_spectra)
     save_set(val_set, out_data_path, "val", pred_spectra)
