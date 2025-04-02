@@ -3,43 +3,136 @@
 Script to process analytical data and generate tokenized datasets for SMILES and spectra.
 """
 
-from pathlib import Path
-from typing import Tuple, List, Dict, Union
-from functools import partial
+import os as so
 from concurrent.futures import ProcessPoolExecutor
+from functools import partial
+from pathlib import Path
+from typing import Tuple, List, Dict, Union, Optional
 
-import os
 import click
 import numpy as np
 import pandas as pd
 import regex as re
-
 from rdkit import Chem
+from rdkit.Chem import StereoSpecified
+from rdkit.Chem.rdmolops import FindPotentialStereo
+from rxn.chemutils.tokenization import tokenize_smiles
 from scipy.interpolate import interp1d
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.model_selection import train_test_split
 from tqdm.auto import tqdm
 
-from rxn.chemutils.tokenization import tokenize_smiles
-
 
 def set_nice():
-    os.nice(10)  # Increase niceness by 10 (lower priority)
+    so.nice(10)  # Increase niceness by 10 (lower priority)
 
 
-def split_data(data: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def smiles_for_groups(smiles: str) -> str:
     """
-    Split the DataFrame into train, test, and validation sets.
+    Normalizes SMILES strings for group-aware splitting in the most permissive way,
+    in particular by removing stereochemistry.
+    """
+    if not (mol := Chem.MolFromSmiles(smiles)):
+        raise ValueError(f"Invalid SMILES: {smiles}")
+
+    return Chem.MolToSmiles(mol, isomericSmiles=False, canonical=True, allHsExplicit=False)
+
+
+def split_data(data: pd.DataFrame, seed: int, groups: Optional[pd.Series] = None) -> Tuple[
+    pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Splits a molecular dataset into training, test, and validation sets.
+
+    If group labels are provided, a group-aware strategy is used to ensure that the test set
+    contains entire groups (e.g., chemical clusters or scaffolds), avoiding data leakage
+    between training and test.
+
+    Key behavior:
+    - Exactly 10% of the entire dataset is allocated to the test set.
+    - If `groups` is provided:
+        * SMILES are normalized for consistency.
+        * Group-aware splitting ensures no group appears in both train and test.
+        * An assertion guarantees that the group-aware split yields enough samples for the test set.
+        * The remaining 90% is split randomly: 95% for training and 5% for validation.
+    - If `groups` is not provided:
+        * A random split is used: 10% test, then 5% of remaining 90% for validation.
 
     Parameters:
-        data: Input DataFrame.
-        seed: Random seed for reproducibility.
+        data (pd.DataFrame): Input DataFrame containing a 'smiles' column.
+        seed (int): Random seed for reproducibility.
+        groups (Optional[pd.Series]): Optional Series mapping SMILES strings to group IDs,
+                                       used for group-aware splitting. Index should be SMILES.
 
     Returns:
-        A tuple containing the train, test, and validation DataFrames.
+        Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple containing (train_df, test_df, val_df),
+        with 'smiles' and all original columns preserved.
     """
-    train, test = train_test_split(data, test_size=0.1, random_state=seed, shuffle=True)
-    train, val = train_test_split(train, test_size=0.05, random_state=seed, shuffle=True)
-    return train, test, val
+
+    data = data.copy()
+
+    if groups is not None:
+        # Normalize SMILES
+        data['normalized_smiles'] = data['smiles'].apply(smiles_for_groups)
+        groups.index = groups.index.map(smiles_for_groups)
+
+        # Map group IDs
+        data['group_id'] = data['normalized_smiles'].map(groups)
+
+        # Use group-aware split for test set
+        known = data[data['group_id'].notna()]
+        unknown = data[data['group_id'].isna()]
+
+        n_test = int(len(data) * 0.1)
+
+        gss = GroupShuffleSplit(n_splits=1, test_size=n_test / len(known), random_state=seed)
+        group_train_idx, group_test_idx = next(gss.split(known, groups=known['group_id']))
+        group_test = known.iloc[group_test_idx]
+
+        # Assert test size is as expected
+        assert len(group_test) >= n_test, "Group-based test split did not yield enough samples."
+
+        # Remaining data = group_train + all unknowns
+        group_train = known.iloc[group_train_idx]
+        remaining = pd.concat([group_train, unknown], ignore_index=True)
+
+        train_df, val_df = train_test_split(remaining, test_size=0.05, random_state=seed, shuffle=True)
+
+        drop_cols = ['normalized_smiles', 'group_id']
+
+        return (
+            train_df.drop(columns=drop_cols),
+            group_test.drop(columns=drop_cols),
+            val_df.drop(columns=drop_cols),
+        )
+
+    else:
+        # No group info: simple random split
+        test_df = data.sample(frac=0.1, random_state=seed)
+        remaining = data.drop(index=test_df.index)
+        train_df, val_df = train_test_split(remaining, test_size=0.05, random_state=seed, shuffle=True)
+        return train_df, test_df, val_df
+
+
+def get_smiles_groups_from_uspto(uspto_path: Path) -> pd.Series:
+    return pd.read_csv(uspto_path, sep='\t').set_index('smiles').component
+
+
+def has_complete_stereo(smiles: str) -> Optional[bool]:
+    """
+    Check if a SMILES string has complete stereo information.
+
+    Parameters:
+        smiles: The SMILES string.
+
+    Returns:
+        True if the SMILES has complete stereo information, False otherwise.
+        None if the SMILES is invalid.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+
+    if mol:
+        pot_stereo = FindPotentialStereo(mol)
+        return all((s.specified == StereoSpecified.Specified) for s in pot_stereo)
 
 
 def add_explicit_h(smiles: str) -> str:
@@ -126,7 +219,7 @@ def process_ir(ir: np.ndarray, interpolation_points: int = 400) -> str:
     interp_ir = interp(interpolation_x)
     # Normalize
     interp_ir = interp_ir + abs(min(interp_ir))
-    interp_ir = (interp_ir / max(interp_ir)) * 100
+    interp_ir = (interp_ir / (max(interp_ir) or 1)) * 100
     interp_ir = np.round(interp_ir, decimals=0).astype(int).astype(str)
     return 'IR ' + ' '.join(interp_ir) + ' '
 
@@ -156,6 +249,7 @@ def tokenise_data(
         pos_msms: bool,
         neg_msms: bool,
         formula: bool,
+        req_stereo: bool,
         explicit_h: bool,
         mono: bool,
 ) -> pd.DataFrame:
@@ -170,8 +264,9 @@ def tokenise_data(
         pos_msms: Whether to include positive MS/MS data.
         neg_msms: Whether to include negative MS/MS data.
         formula: Whether to include molecular formula.
+        req_stereo: Whether to require complete stereo information in SMILES.
         explicit_h: Whether to convert SMILES to explicit hydrogen representation.
-        mono: Whether to remove stereo information from SMILES.
+        mono: Whether to remove all stereo information from SMILES.
 
     Returns:
         A DataFrame with tokenized 'source' and 'target' columns.
@@ -180,8 +275,18 @@ def tokenise_data(
 
     # for (_, row) in tqdm(data.iterrows(), total=len(data)):
     for (_, row) in data.iterrows():
-        tokenized_formula = tokenize_formula(row['molecular_formula'])
-        tokenized_input = tokenized_formula if formula else ""
+        input_smiles = row["smiles"]
+
+        if not Chem.MolFromSmiles(input_smiles):
+            print(f"Skipping {input_smiles} due to invalid SMILES")
+            continue
+
+        if req_stereo:
+            if not has_complete_stereo(input_smiles):
+                print(f"Skipping {row['smiles']} due to incomplete stereochemistry")
+                continue
+
+        tokenized_input = tokenize_formula(row['molecular_formula']) if formula else ""
 
         if h_nmr:
             tokenized_input += process_hnmr(row['h_nmr_peaks'])
@@ -204,7 +309,7 @@ def tokenise_data(
             )
             tokenized_input += neg_msms_string
 
-        smiles = row["smiles"]
+        smiles = input_smiles
 
         # The order is important here:
 
@@ -215,7 +320,8 @@ def tokenise_data(
             smiles = add_explicit_h(smiles)
 
         tokenized_target = tokenize_smiles(smiles=smiles)
-        input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target})
+
+        input_list.append({'source': tokenized_input.strip(), 'target': tokenized_target, 'smiles': input_smiles})
 
     input_df = pd.DataFrame(input_list)
 
@@ -274,6 +380,13 @@ def process_parquet_file(
     help="Path to the NMR dataframe",
 )
 @click.option(
+    "--uspto_path",
+    type=click.Path(exists=True, path_type=Path),
+    required=False,
+    help="Path to the USPTO smiles-components dataframe",
+    default=None,
+)
+@click.option(
     "--out_path",
     "-o",
     type=click.Path(path_type=Path),
@@ -286,12 +399,14 @@ def process_parquet_file(
 @click.option("--pos_msms", is_flag=True, default=False, help="Include positive MS/MS data")
 @click.option("--neg_msms", is_flag=True, default=False, help="Include negative MS/MS data")
 @click.option("--formula", is_flag=True, default=False, help="Include molecular formula")
-@click.option("--explicit_h", is_flag=True, default=False, help="Use SMILES with explicit hydrogens")
-@click.option("--mono", is_flag=True, default=False, help="Remove stereo information from SMILES")
+@click.option("--explicit_h", is_flag=True, default=False, help="Add explicit hydrogens in target SMILES")
+@click.option("--req_stereo", is_flag=True, default=False, help="Require complete stereo in source SMILES")
+@click.option("--mono", is_flag=True, default=False, help="Remove stereo information from target SMILES")
 @click.option("--pred_spectra", is_flag=True, default=False, help="Predict spectra")
 @click.option("--seed", type=int, default=3245, help="Random seed")
 def main(
         analytical_data: Path,
+        uspto_path: Optional[Path],
         out_path: Path,
         h_nmr: bool,
         c_nmr: bool,
@@ -300,6 +415,7 @@ def main(
         neg_msms: bool,
         formula: bool,
         explicit_h: bool,
+        req_stereo: bool,
         mono: bool,
         pred_spectra: bool,
         seed: int,
@@ -311,6 +427,7 @@ def main(
     splits it into train, test, and validation sets, and saves them to out_path/data.
     """
     print(f"Analytical data: {analytical_data}")
+    print(f"USPTO data: {uspto_path}")
     print(f"Output path: {out_path}")
     print(f"H NMR: {h_nmr}")
     print(f"C NMR: {c_nmr}")
@@ -319,6 +436,7 @@ def main(
     print(f"Negative MSMS: {neg_msms}")
     print(f"Formula: {formula}")
     print(f"Explicit H: {explicit_h}")
+    print(f"Require stereo: {req_stereo}")
     print(f"Mono (drop stereo): {mono}")
     print(f"Predict spectra: {pred_spectra}")
     print(f"Seed: {seed}")
@@ -332,6 +450,7 @@ def main(
         pos_msms=pos_msms,
         neg_msms=neg_msms,
         formula=formula,
+        req_stereo=req_stereo,
         explicit_h=explicit_h,
         mono=mono,
     )
@@ -342,8 +461,10 @@ def main(
             total=len(parquet_files),
         ))
 
+    groups: Optional[pd.Series] = get_smiles_groups_from_uspto(uspto_path) or None
+
     tokenised_data = pd.concat(tokenised_data_list)
-    train_set, test_set, val_set = split_data(tokenised_data, seed)
+    (train_set, test_set, val_set) = split_data(tokenised_data, seed=seed, groups=groups)
 
     out_data_path = out_path / "data"
 
