@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Script to process analytical data and generate tokenized datasets for SMILES and spectra.
 """
@@ -14,7 +13,8 @@ import numpy as np
 import pandas as pd
 import regex as re
 from rdkit import Chem
-from rdkit.Chem import StereoSpecified
+from rdkit import RDLogger
+from rdkit.Chem import StereoSpecified, StereoType
 from rdkit.Chem.rdmolops import FindPotentialStereo
 from rxn.chemutils.tokenization import tokenize_smiles
 from scipy.interpolate import interp1d
@@ -22,20 +22,31 @@ from sklearn.model_selection import GroupShuffleSplit
 from sklearn.model_selection import train_test_split
 from tqdm.auto import tqdm
 
+RDLogger.DisableLog('rdApp.*')
+
+groups_global = None
+
 
 def set_nice():
-    so.nice(10)  # Increase niceness by 10 (lower priority)
+    so.nice(10)  # Increase niceness (lower priority)
 
 
-def smiles_for_groups(smiles: str) -> str:
+def sanitize_smiles(smiles: str) -> Optional[str]:
     """
-    Normalizes SMILES strings for group-aware splitting in the most permissive way,
+    Normalizes SMILES strings for group-aware splitting in a permissive way,
     in particular by removing stereochemistry.
     """
-    if not (mol := Chem.MolFromSmiles(smiles)):
-        raise ValueError(f"Invalid SMILES: {smiles}")
 
-    return Chem.MolToSmiles(mol, isomericSmiles=False, canonical=True, allHsExplicit=False)
+    if mol := Chem.MolFromSmiles(smiles, sanitize=False):
+        try:
+            Chem.SanitizeMol(mol)
+        except:
+            pass
+
+        for atom in mol.GetAtoms():
+            atom.SetAtomMapNum(0)
+
+        return Chem.MolToSmiles(mol, allHsExplicit=False, canonical=True, isomericSmiles=False)
 
 
 def split_data(data: pd.DataFrame, seed: int, groups: Optional[pd.Series] = None) -> Tuple[
@@ -72,10 +83,11 @@ def split_data(data: pd.DataFrame, seed: int, groups: Optional[pd.Series] = None
 
     if groups is not None:
         # Normalize SMILES
-        data['normalized_smiles'] = data['smiles'].apply(smiles_for_groups)
-        groups.index = groups.index.map(smiles_for_groups)
+        data['normalized_smiles'] = data['smiles'].apply(sanitize_smiles)
 
-        # Map group IDs
+        # We assume `groups` is already normalized in the same way
+        # groups.index = groups.index.map(smiles_for_groups)
+
         data['group_id'] = data['normalized_smiles'].map(groups)
 
         # Use group-aware split for test set
@@ -132,6 +144,12 @@ def has_complete_stereo(smiles: str) -> Optional[bool]:
 
     if mol:
         pot_stereo = FindPotentialStereo(mol)
+
+        if len(pot_stereo) == 1:
+            if pot_stereo[0].type == StereoType.Atom_Tetrahedral:
+                # In an achiral medium/solvent, one chiral atom makes no difference
+                return True
+
         return all((s.specified == StereoSpecified.Specified) for s in pot_stereo)
 
 
@@ -285,6 +303,12 @@ def tokenise_data(
             if not has_complete_stereo(input_smiles):
                 print(f"Skipping {row['smiles']} due to incomplete stereochemistry")
                 continue
+
+        if groups_global is not None:
+            if sanitize_smiles(input_smiles) in groups_global.index:
+                print(f"Is in USPTO data:  {input_smiles} ")
+            else:
+                print(f"Not in USPTO data: {input_smiles}")
 
         tokenized_input = tokenize_formula(row['molecular_formula']) if formula else ""
 
@@ -455,13 +479,16 @@ def main(
         mono=mono,
     )
 
+    groups: Optional[pd.Series] = uspto_path and get_smiles_groups_from_uspto(uspto_path)
+
+    global groups_global
+    groups_global = groups
+
     with ProcessPoolExecutor(max_workers=7, initializer=set_nice) as executor:
         tokenised_data_list = list(tqdm(
             executor.map(process_func, parquet_files),
             total=len(parquet_files),
         ))
-
-    groups: Optional[pd.Series] = get_smiles_groups_from_uspto(uspto_path) or None
 
     tokenised_data = pd.concat(tokenised_data_list)
     (train_set, test_set, val_set) = split_data(tokenised_data, seed=seed, groups=groups)
