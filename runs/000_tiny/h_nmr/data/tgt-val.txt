@@ -1,9 +1,8 @@
-C N C ( = O ) c 1 c c c c c 1 N C ( = O ) C O c 1 c c c ( C ( C ) = O ) c c 1
-C [C@@] ( O ) ( C N = [N+] = [N-] ) c 1 c c c c c 1 Br
-N C ( = O ) C C [C@H] ( N ) C ( = O ) N c 1 c c c ( - c 2 c c c ( C ( = O ) O ) c ( = O ) [nH] 2 ) c c 1
-O = C ( O ) C = C C C C C C c 1 c c c c 2 c n c n 1 2
-C O C ( = O ) C N S ( = O ) ( = O ) c 1 c c c ( O C C 2 C C 2 ) c c 1
-C O c 1 c c c ( N 2 C C N ( c 3 c ( C ) c ( C ) c 4 c ( c 3 C ) C ( c 3 c c c ( C ) c c 3 ) C ( C ) ( C ) O 4 ) C C 2 ) c c 1
-C C 1 C N ( c 2 c c 3 c c c c c 3 c ( = O ) [nH] 2 ) C C ( C ) N 1
-C O C c 1 c c c ( O C ( F ) ( F ) F ) c ( C = N O ) c 1
-C N 1 C ( = S ) N ( C c 2 c c c c c 2 ) C ( = O ) C 1 = C 1 S c 2 c c c c c 2 N 1 C
+[CH3] [CH2] [CH2] [CH] ( [CH2] [C] ( = [O] ) [O] [CH2] [CH3] ) [n] 1 [c] ( = [O] ) [n] ( [CH2] [c] 2 [cH] [cH] [cH] [c] 3 [c] ( [CH3] ) [c] ( [CH3] ) [n] ( [CH3] ) [c] 2 3 ) [c] 2 [cH] [cH] [cH] [cH] [c] 2 1
+[CH3] [CH2] [O] [C] ( = [O] ) [c] 1 [c] ( [NH2] ) [nH] [c] ( [CH3] ) [c] 1 [CH3]
+[CH3] [c] 1 [n] [c] ( [N] 2 [CH2] [CH2] [N] ( [CH3] ) [CH2] [CH2] 2 ) [c] ( [Br] ) [n] [c] 1 [Br]
+[CH3] [c] 1 [cH] [n] [c] ( [N] 2 [CH2] [CH2] [N] ( [C] ( = [O] ) [c] 3 [cH] [cH] [c] ( [Br] ) [cH] [cH] 3 ) [CH2] [CH2] 2 ) [c] ( [CH3] ) [cH] 1
+[CH3] [O] [CH2] [CH] ( [CH2] [CH] = [O] ) [NH] [C] ( = [O] ) [O] [C] ( [CH3] ) ( [CH3] ) [CH3]
+[O] = [C] 1 [N] ( [CH2] [CH2] [OH] ) [CH2] [CH] ( [c] 2 [cH] [cH] [cH] [c] ( [C] ( [F] ) ( [F] ) [F] ) [cH] 2 ) [N] 1 [c] 1 [cH] [cH] [c] ( [O] [c] 2 [cH] [cH] [c] ( [Cl] ) [cH] [cH] 2 ) [cH] [cH] 1
+[CH3] [N] ( [c] 1 [cH] [cH] [c] ( [F] ) [cH] [cH] 1 ) [S] ( = [O] ) ( = [O] ) [c] 1 [cH] [cH] [cH] [cH] [c] 1 [CH] = [O]
+[CH3] [CH2] [O] [C] ( = [O] ) [c] 1 [cH] [n] [n] ( [CH3] ) [c] 1 [C] ( = [O] ) [NH] [c] 1 [cH] [cH] [n] 2 [n] [c] ( [N] 3 [CH2] [CH2] [CH2] [CH2] 3 ) [n] [c] 2 [cH] 1
